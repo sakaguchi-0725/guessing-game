@@ -1,11 +1,19 @@
-use std::{cmp::Ordering, io};
+use std::{cmp::Ordering, fmt, io};
 
 fn main() {
     println!("数を当ててください！");
 
     loop {
         // 難易度選択
-        let difficulty = select_difficulty();
+        let difficulty = match select_difficulty() {
+            Ok(d) => d,
+            Err(GameError::IoError(e)) => {
+                eprintln!("{}", e);
+                continue;
+            }
+            _ => continue,
+        };
+
         let config = GameConfig::new(difficulty);
 
         println!("{}モードでゲームを開始します！", config.name);
@@ -29,38 +37,37 @@ fn main() {
                         }
                     }
                 }
-                Err(GuessError::ParseError) => {
-                    println!("数字を入力してください");
-                    continue;
-                }
-                Err(GuessError::OutOfRange) => {
-                    println!("{}から{}の間で入力してください", config.min, config.max);
+                Err(e) => {
+                    eprintln!("{}", e);
                     continue;
                 }
             }
         }
 
         // リトライ確認
-        if !ask_retry() {
-            println!("ゲームを終了します");
-            break;
-        }
+        match ask_retry() {
+            Ok(true) => continue,
+            Ok(false) => {
+                println!("ゲームを終了します");
+                break;
+            }
+            Err(e) => {
+                eprintln!("{}", e);
+                break;
+            }
+        };
     }
 }
 
-fn ask_retry() -> bool {
+fn ask_retry() -> Result<bool, GameError> {
     println!("もう一度プレイしますか？（y/n）");
 
     loop {
-        let mut input = String::new();
-        io::stdin()
-            .read_line(&mut input)
-            .expect("入力の読み取りに失敗しました");
+        let input = read_input()?;
 
-        let lowercased = input.trim().to_lowercase();
-        match lowercased.as_str() {
-            "y" | "yes" => return true,
-            "n" | "no" => return false,
+        match input.to_lowercase().as_str() {
+            "y" | "yes" => return Ok(true),
+            "n" | "no" => return Ok(false),
             _ => {
                 println!("y/nで回答してください");
                 continue;
@@ -69,27 +76,48 @@ fn ask_retry() -> bool {
     }
 }
 
-#[derive(Debug, PartialEq)]
-enum GuessError {
+#[derive(Debug)]
+enum GameError {
+    IoError(io::Error),
     ParseError,
-    OutOfRange,
+    OutOfRange { min: u32, max: u32 },
 }
 
-fn get_guess(config: &GameConfig) -> Result<u32, GuessError> {
-    println!("予想を入力してください");
+impl fmt::Display for GameError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            GameError::IoError(e) => write!(f, "入力エラーが発生しました: {}", e),
+            GameError::ParseError => write!(f, "数字を入力してください"),
+            GameError::OutOfRange { min, max } => {
+                write!(f, "{}から{}の間で入力してください", min, max)
+            }
+        }
+    }
+}
 
+fn read_input() -> Result<String, GameError> {
     let mut input = String::new();
     io::stdin()
         .read_line(&mut input)
-        .expect("入力の読み込みに失敗しました");
+        .map_err(GameError::IoError)?;
+    Ok(input.trim().to_string())
+}
 
-    let guess: u32 = match input.trim().parse() {
+fn get_guess(config: &GameConfig) -> Result<u32, GameError> {
+    println!("予想を入力してください");
+
+    let input = read_input()?;
+
+    let guess: u32 = match input.parse() {
         Ok(num) => num,
-        Err(_) => return Err(GuessError::ParseError),
+        Err(_) => return Err(GameError::ParseError),
     };
 
     if !config.is_valid_range(guess) {
-        return Err(GuessError::OutOfRange);
+        return Err(GameError::OutOfRange {
+            min: config.min,
+            max: config.max,
+        });
     }
 
     Ok(guess)
@@ -134,22 +162,19 @@ impl GameConfig {
     }
 }
 
-fn select_difficulty() -> Difficulty {
+fn select_difficulty() -> Result<Difficulty, GameError> {
     println!("難易度を選択してください（1, 2, 3）");
     println!("1: 初級（1-50）");
     println!("2: 中級（1-100）");
     println!("3: 上級（1-200）");
 
     loop {
-        let mut input = String::new();
-        io::stdin()
-            .read_line(&mut input)
-            .expect("難易度の読み取りに失敗しました");
+        let input = read_input()?;
 
-        match input.trim() {
-            "1" => return Difficulty::Easy,
-            "2" => return Difficulty::Normal,
-            "3" => return Difficulty::Hard,
+        match input.as_str() {
+            "1" => return Ok(Difficulty::Easy),
+            "2" => return Ok(Difficulty::Normal),
+            "3" => return Ok(Difficulty::Hard),
             _ => {
                 println!("入力された値が正しくありません");
                 println!("1 ~ 3で難易度を選択してください");
