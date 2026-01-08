@@ -3,36 +3,66 @@ use std::{cmp::Ordering, io};
 fn main() {
     println!("数を当ててください！");
 
-    let difficulty = select_difficulty();
-    let config = GameConfig::new(difficulty);
-
-    println!("{}モードでゲームを開始します！", config.name);
-
-    // 乱数生成
-    let secret_number = rand::random_range(config.min..=config.max);
-    let mut attempts = 0;
-
-    // ゲームループ
     loop {
-        match get_guess(&config) {
-            Ok(guess) => {
-                attempts += 1;
+        // 難易度選択
+        let difficulty = select_difficulty();
+        let config = GameConfig::new(difficulty);
 
-                match guess.cmp(&secret_number) {
-                    Ordering::Less => println!("もっと大きい数です"),
-                    Ordering::Greater => println!("もっと小さい数です"),
-                    Ordering::Equal => {
-                        println!("正解！{}回で当たりました", attempts);
-                        break;
+        println!("{}モードでゲームを開始します！", config.name);
+
+        // 乱数生成
+        let secret_number = rand::random_range(config.min..=config.max);
+        let mut attempts = 0;
+
+        // ゲームループ
+        loop {
+            match get_guess(&config) {
+                Ok(guess) => {
+                    attempts += 1;
+
+                    match guess.cmp(&secret_number) {
+                        Ordering::Less => println!("もっと大きい数です"),
+                        Ordering::Greater => println!("もっと小さい数です"),
+                        Ordering::Equal => {
+                            println!("正解！{}回で当たりました", attempts);
+                            break;
+                        }
                     }
                 }
+                Err(GuessError::ParseError) => {
+                    println!("数字を入力してください");
+                    continue;
+                }
+                Err(GuessError::OutOfRange) => {
+                    println!("{}から{}の間で入力してください", config.min, config.max);
+                    continue;
+                }
             }
-            Err(GuessError::ParseError) => {
-                println!("数字を入力してください");
-                continue;
-            }
-            Err(GuessError::OutOfRange) => {
-                println!("{}から{}の間で入力してください", config.min, config.max);
+        }
+
+        // リトライ確認
+        if !ask_retry() {
+            println!("ゲームを終了します");
+            break;
+        }
+    }
+}
+
+fn ask_retry() -> bool {
+    println!("もう一度プレイしますか？（y/n）");
+
+    loop {
+        let mut input = String::new();
+        io::stdin()
+            .read_line(&mut input)
+            .expect("入力の読み取りに失敗しました");
+
+        let lowercased = input.trim().to_lowercase();
+        match lowercased.as_str() {
+            "y" | "yes" => return true,
+            "n" | "no" => return false,
+            _ => {
+                println!("y/nで回答してください");
                 continue;
             }
         }
